@@ -4,8 +4,8 @@ This interactive tutorial (with questions :) is intended to show different ways 
 
 We will see 3 ways to use seccomp:
 
- - Strict mode: the original one, not very convenient
- - Filter mode: a more flexible version, but still not very convenient
+ - Strict mode: the original one, not very flexible
+ - Filter mode: a better version, but still not very convenient
  - libseccomp: a high level API to use seccomp in a very simple way
 
 ## Strict mode
@@ -21,8 +21,7 @@ First we will have a look at this first seccomp mode with a tiny example:
 #include <unistd.h>
 
 int main () {
-	printf("Hello there!\n");
-	printf("You should see this message.\n");
+	printf("Hello there! You should see this message.\n");
 
 	fork();
 	printf("But you should not see this one.\n");
@@ -64,7 +63,7 @@ Now add a call to printf between prctl and fork:
 
 Once again, try to understand what happens.
 
-Last question: comment out the first two calls to printf and try again.
+Last question: comment out the first call to printf and try again. Is everything ok? Once again strace is your best friend in case you don't understand something.
 
 ## Filter mode
 
@@ -100,7 +99,7 @@ struct seccomp_data {
 };
 ```
 
-Where `nr` is the syscall number (architecture-dependent), `arch` is the system architecture, `instruction_pointer` is the CPU rip, and `args` are the syscall arguments.
+Where `nr` is the syscall number (architecture-dependent), `arch` is the system architecture, `instruction_pointer` is the CPU rip register, and `args` are the syscall arguments.
 
 The BFP instruction set includes:
 
@@ -133,7 +132,7 @@ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch)))
 ```
 
 With:
- - BPF_LD load
+ - BPF_LD is load
  - BPF_W is the operand size (word)
  - BPF_ABS is the source of load (data area here)
 
@@ -154,7 +153,7 @@ Because syscall numbers are architecture dependent, this bloc of instructions sh
 
 Ok, now we know how to build instructions, let's see how to create and assemble a concrete BPF program.
 
-In order to use seccomp with the filter mode, we need to call `prctl`:
+In order to use seccomp with the filter mode, we need to call `prctl()`:
 
 ```C
 prctl(PR_SET_SECCOMP, SET_MODE_FILTER, &fprog);
@@ -164,24 +163,22 @@ prctl(PR_SET_SECCOMP, SET_MODE_FILTER, &fprog);
 
 ```C
 struct sock_fprog {
-	unsigned short len;	/* Number of instructions */
+	unsigned short len; /* Number of instructions */
 	struct sock_filter *filter; /* Pointer to program (array of instructions) */
 };
 ```
 
 With len the number of instructions in the BPF program, and filter the actual array of instructions (whose members are sock_filter as defined above).
 
-Now suppose we want to forbid the call to `write()`. We can build a BPF program and install it wia prctl with the following function:
+Now suppose we want to forbid the call to `write()`. We can build a BPF program and install it via `prctl` with the following function:
 
 ```C
 static void install_filter (void) {
 	struct sock_filter filter[] = {
-		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 
-				 (offsetof(struct seccomp_data, arch))),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch))),
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
-		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
-				 (offsetof(struct seccomp_data, nr))),
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))),
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_write, 1, 0),
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
@@ -191,21 +188,19 @@ static void install_filter (void) {
 		.filter = filter,
 	};
 
-	//seccomp(SECCOMP_SET_FILTER, 0, &prog);
 	prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
 }
 ```
 
-The first three instructions are the one we saw earlier to check current architecture. The four next are simply a check to see if the syscall being called is `write()` are not.
+The first three instructions are the ones we saw earlier to check current architecture. The next four are simply a check to see if the syscall being called is `write()` are not.
 
 In order to do that, we load the syscall number from seccomp_data with:
 
 ```C
-BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
-			 (offsetof(struct seccomp_data, nr)))
+BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr)))
 ```
 
-Then we check the number, and jump accordingly to the number being __NR_write or not:
+Then we check the number, and jump accordingly to the syscall number being __NR_write or not:
 
 ```C
 BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_write, 1, 0)
@@ -249,7 +244,7 @@ And that's it for the filter mode! No exercice for this part, we will have some 
 
 Writting a BPF program by hand can quickly become a tedious task. Thus, a linux kernel developper, Paul Moore, created a high level API to easily add seccomp filters: libseccomp.
 
-You need to install libseccomp-dev on your computer to use libseccomp. We will now have a look at it, and see how to simply build seccomp filters thanks to this library.
+You need to install `libseccomp-dev` on your computer to use libseccomp. We will now have a look at it, and see how to simply build seccomp filters thanks to this library.
 
 Every function of the library uses a filter context `ctx`, thus we need to create one.
 
@@ -257,7 +252,7 @@ Every function of the library uses a filter context `ctx`, thus we need to creat
 scmp_filter_ctx ctx;
 ```
 
-We need to initialize the context with a default behaviour. The behaviour will be the one to be used in case the program calls a syscall that does not match any of the configured seccomp filter rules (see man 3 seccomp_init).
+We need to initialize the context with a default behaviour. The behaviour will be the one to be used in case the program calls a syscall that does not match any of the configured seccomp filter rules (see man seccomp_init(3)).
 
 The behaviour can be one of :
 
@@ -280,7 +275,7 @@ For instance, let's say we want to allow the program to use `write()`. We use th
 ```C
 seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
 ```
-The last argument ('0') just states that we don't care about what argument are passed to the write syscall. We will see later an example where we actually check write's argument to allow the syscall or not.
+The last argument `'0'` just states that we don't care about what argument are passed to the write syscall. We will see later an example where we actually check write's argument to allow the syscall or not.
 
 Now we have to load the seccomp context into the kernel. We simply use:
 
@@ -301,13 +296,13 @@ So the beginning of our test program looks like this:
 
 static void install_filter (void) {
 	scmp_filter_ctx ctx;
-	ctx = seccomp_init(SCMP_ACT_KILL); /* kill process if filter 
-										  doesn't pass */
+	ctx = seccomp_init(SCMP_ACT_KILL); /* kill process if filter doesn't pass */
 	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0); 
 	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
 	seccomp_load(ctx);
 	seccomp_release(ctx);
-```}
+}
+```
 
 I added `exit_group()` in the authorized syscalls to make the program exit cleanly.
 Now the main function is:
@@ -334,14 +329,44 @@ seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
 
 We will call:
 ```C
-seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1,
-				 SCMP_A0(SCMP_CMP_EQ, STDERR_FILENO));
+seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1, SCMP_A0(SCMP_CMP_EQ, STDERR_FILENO));
 ```
 
-It will now only write if the first argument is stderr file stream. You can use man seccomp_rule_add to have better understanding of the function arguments.
+It will now only write if the first argument is stderr file stream. You can use `man seccomp_rule_add(3)` to have better understanding of the function arguments.
 
 ---
 
 Now let's practice!
 
+Here is a little dummy program (not very realistic :). Try to make it a bit more secure with libseccomp without touching the main function (only install_filter). Be careful to keep the program semantic!
 
+```C
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <seccomp.h>
+
+static void install_filter (void) {
+    scmp_filter_ctx ctx;
+
+    /* Here goes your filter ... */
+
+    seccomp_load(ctx);
+    seccomp_release(ctx);
+}
+
+int main () {
+    char username[20];
+
+    //install_filter();
+
+    printf("Who said never use gets??\n");
+    gets(username);
+
+    printf("I guess it's not you, %s...\n", username);
+
+    system("/bin/echo Look, I can even put system in the plt with no worries!");
+
+    return EXIT_SUCCESS;
+}
+```
