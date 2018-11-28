@@ -142,7 +142,7 @@ Then, we want to check if the architecture number is x86_64, and kill the proces
 BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, arch)))
 BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),
 BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
-// ...
+/* ... */
 ```
 
 These are pretty straightforward instructions : the first one is the one we just saw, the second one does an equality check between the accumulator register (where we just loaded arch number), and the `k` field which contains x86_64 arch constant. `jt` is equal to 1, which means we will skip the next instruction in case the equality matched. In case it didn't, `jf` field equal to 0 means we will execute the next instruction, which will simply kill the process.
@@ -238,7 +238,60 @@ int main () {
 }
 ```
 
-And that's it for the filter mode! No exercice for this part, we will have some in the next one.
+And that's it for the filter mode!
+
+---
+
+Now we will a small exercice. Here is a snippet of code:
+
+```C
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include <sys/prctl.h>
+#include <linux/seccomp.h>
+#include <linux/filter.h>
+#include <linux/bpf_common.h>
+#include <linux/audit.h>
+#include <unistd.h>
+#include <syscall.h>
+
+static void install_filter(void) {
+	struct sock_filter filter[] = {
+        /*
+         * Here goes your filter
+         */
+	};
+	struct sock_fprog prog = {
+		.len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
+		.filter = filter,
+	};
+
+	prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog);
+}
+
+int main () {
+	prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+
+	/* install_filter(); */
+	printf("Hello!");
+
+	open("/tmp/allowed", O_RDONLY, 0666);
+	printf("You should see this message.\n");
+
+	open("/tmp/forbidden", O_RDWR, 0666);
+	printf("But you should see this one...\n");
+
+	exit(EXIT_SUCCESS);
+}
+```
+
+What I want you to do, is simply to add some filter to allow open on read only mode, but forbid it in any others. Don't forget to allow other syscalls to make the printfs work...
 
 ## LibSeccomp
 
@@ -340,32 +393,41 @@ Now let's practice!
 
 Here is a little dummy program (not very realistic :). Try to make it a bit more secure with libseccomp without touching the main function (only install_filter). Be careful to keep the program semantic!
 
-```C
+Here is a little dummy program that allow read on any buffer size! Try to only allow what is needed (without overflow):
 
+```C
 #include <stdlib.h>
 #include <stdio.h>
+
 #include <seccomp.h>
+#include <unistd.h>
+
 
 static void install_filter (void) {
     scmp_filter_ctx ctx;
 
-    /* Here goes your filter ... */
+    ctx = seccomp_init(SCMP_ACT_KILL);
+
+    /*
+     * Here goes your filter
+     */
 
     seccomp_load(ctx);
     seccomp_release(ctx);
 }
 
-int main () {
+int main (int argc, char *argv[]) {
+
     char username[20];
 
-    //install_filter();
+    /* install_filter(); */
 
-    printf("Who said never use gets??\n");
-    gets(username);
+    printf("*** WARNING ***\n");
+    printf("This is a test program, do not try this at home.\n\n");
 
-    printf("I guess it's not you, %s...\n", username);
+    read(0, username, atoi(argv[1]));
 
-    system("/bin/echo Look, I can even put system in the plt with no worries!");
+    printf("Hello %s\n", username);
 
     return EXIT_SUCCESS;
 }
