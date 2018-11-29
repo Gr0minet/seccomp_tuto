@@ -206,7 +206,7 @@ Then we check the number, and jump accordingly to the syscall number being __NR_
 BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_write, 1, 0)
 ```
 
-And the main of our test program look like this:
+And the main of our test program looks like this:
 
 ```C
 #include <stdio.h>
@@ -242,7 +242,7 @@ And that's it for the filter mode!
 
 ---
 
-Now we will a small exercice. Here is a snippet of code:
+Now we will do a small exercice. Here is a snippet of code:
 
 ```C
 #include <stdio.h>
@@ -348,6 +348,7 @@ So the beginning of our test program looks like this:
 static void install_filter (void) {
 	scmp_filter_ctx ctx;
 	ctx = seccomp_init(SCMP_ACT_KILL); /* kill process if filter doesn't pass */
+	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0); 
 	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0); 
 	seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0);
 	seccomp_load(ctx);
