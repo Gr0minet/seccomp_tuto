@@ -181,7 +181,7 @@ static void install_filter (void) {
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (offsetof(struct seccomp_data, nr))),
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_write, 1, 0),
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL)
 	};
 	struct sock_fprog prog = {
 		.len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
@@ -247,7 +247,6 @@ Now we will a small exercice. Here is a snippet of code:
 ```C
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -258,14 +257,12 @@ Now we will a small exercice. Here is a snippet of code:
 #include <linux/filter.h>
 #include <linux/bpf_common.h>
 #include <linux/audit.h>
-#include <unistd.h>
-#include <syscall.h>
 
 static void install_filter(void) {
 	struct sock_filter filter[] = {
-        /*
-         * Here goes your filter
-         */
+		/*
+		 * Here goes your filter
+		 */
 	};
 	struct sock_fprog prog = {
 		.len = (unsigned short) (sizeof(filter) / sizeof(filter[0])),
@@ -279,13 +276,14 @@ int main () {
 	prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
 
 	/* install_filter(); */
-	printf("Hello!");
 
-	open("/tmp/allowed", O_RDONLY, 0666);
+	printf("Hello!\n");
+
+	open("/tmp/allowed", O_RDONLY);
 	printf("You should see this message.\n");
 
-	open("/tmp/forbidden", O_RDWR, 0666);
-	printf("But you should see this one...\n");
+	open("/tmp/forbidden", O_RDWR);
+	printf("But you should not see this one...\n");
 
 	exit(EXIT_SUCCESS);
 }
@@ -398,27 +396,22 @@ Here is a little dummy program that allow read on any buffer size! Try to only a
 ```C
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <seccomp.h>
 #include <unistd.h>
 
+#define BUFSIZE 20
 
 static void install_filter (void) {
-    scmp_filter_ctx ctx;
 
-    ctx = seccomp_init(SCMP_ACT_KILL);
+	/* Here goes your filter */
 
-    /*
-     * Here goes your filter
-     */
-
-    seccomp_load(ctx);
-    seccomp_release(ctx);
 }
 
 int main (int argc, char *argv[]) {
 
-    char username[20];
+    char username[BUFSIZE];
 
     /* install_filter(); */
 
@@ -426,6 +419,8 @@ int main (int argc, char *argv[]) {
     printf("This is a test program, do not try this at home.\n\n");
 
     read(0, username, atoi(argv[1]));
+
+	username[strcspn(username, "\n")] = '\0';
 
     printf("Hello %s\n", username);
 
